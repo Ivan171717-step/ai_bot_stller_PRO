@@ -21,6 +21,7 @@ from database import get_examples, save_application
 from services.pricing import estimated_price
 from services.formatters import lead_summary, admin_lead_text
 from services.ai_service import ai_answer, ask_ai
+from services.google_sheets import send_to_sheets
 
 router = Router()
 
@@ -51,6 +52,16 @@ AI_SALES_RULES = (
 @router.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
+
+    # Записываем посетителя в Google Sheets после /start
+    send_to_sheets("visitor", {
+        "user_id": message.from_user.id,
+        "username": message.from_user.username or "",
+        "first_name": message.from_user.first_name or "",
+        "last_name": message.from_user.last_name or "",
+        "source": "telegram"
+    })
+
     banner = "assets/banner.png"
     try:
         await message.answer_photo(
@@ -334,6 +345,23 @@ async def lead_send(message: Message, state: FSMContext, bot: Bot):
     )
 
     app_id = await save_application(message.from_user, data, estimated)
+
+    # Записываем заявку в Google Sheets
+    send_to_sheets("application", {
+        "app_id": app_id,
+        "user_id": message.from_user.id,
+        "username": message.from_user.username or "",
+        "name": data.get("name", ""),
+        "phone": data.get("phone", ""),
+        "business": data.get("business", ""),
+        "bot_type": data.get("bot_type", ""),
+        "functions": data.get("functions", ""),
+        "payments": data.get("payments", ""),
+        "ai_needed": data.get("ai_needed", ""),
+        "urgency": data.get("urgency", ""),
+        "comment": data.get("comment", ""),
+        "price": estimated
+    })
 
     for admin_id in config.admin_ids:
         await bot.send_message(
