@@ -1,5 +1,5 @@
-app = 'ai-bot-stller-pro'
-primary_region = 'ams'
+app = 'ai-bot-seller-pro'
+primary_region = 'fra'
 
 [build]
 
