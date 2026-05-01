@@ -3,6 +3,12 @@ primary_region = 'fra'
 
 [build]
 
+[processes]
+  app = 'python bot.py'
+
+[deploy]
+  strategy = 'immediate'
+
 [[vm]]
   memory = '256mb'
   cpu_kind = 'shared'
