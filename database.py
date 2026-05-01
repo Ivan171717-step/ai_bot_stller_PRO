@@ -1,8 +1,10 @@
 import json
+import os
 from datetime import datetime
 import aiosqlite
 
-DB_PATH = "data/bot.db"
+os.makedirs("data", exist_ok=True)
+DB_PATH = os.getenv("DB_PATH", "data/bot.db")
 
 DEFAULT_SETTINGS = {
     "min_price": "2000",
