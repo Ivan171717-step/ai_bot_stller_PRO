@@ -17,7 +17,7 @@ from keyboards import (
     examples_inline,
     after_quiz_kb,
 )
-from database import get_examples, save_application
+from database import get_examples, save_application,  save_visitor
 from services.pricing import estimated_price
 from services.formatters import lead_summary, admin_lead_text
 from services.ai_service import ai_answer, ask_ai
@@ -54,8 +54,8 @@ async def start(message: Message, state: FSMContext):
     print("START WORKS", flush=True)
 
     await state.clear()
+    await save_visitor(message.from_user)
 
-    # Записываем посетителя в Google Sheets после /start
     send_to_sheets("visitor", {
         "user_id": message.from_user.id,
         "username": message.from_user.username or "",

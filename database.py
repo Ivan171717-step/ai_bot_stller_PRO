@@ -1,5 +1,5 @@
-import json
 import os
+import csv
 from datetime import datetime
 import aiosqlite
 
@@ -27,6 +27,11 @@ DEFAULT_EXAMPLES = [
     ("Бот для записи", "Выбор услуги и времени, запись клиента, уведомления и история заявок."),
 ]
 
+
+def now_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
@@ -35,6 +40,7 @@ async def init_db():
             value TEXT NOT NULL
         )
         """)
+
         await db.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             user_id INTEGER PRIMARY KEY,
@@ -45,6 +51,20 @@ async def init_db():
             applications_count INTEGER DEFAULT 0
         )
         """)
+
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS visitors (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            source TEXT,
+            first_seen TEXT,
+            last_seen TEXT,
+            visits_count INTEGER DEFAULT 1
+        )
+        """)
+
         await db.execute("""
         CREATE TABLE IF NOT EXISTS applications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,6 +84,7 @@ async def init_db():
             created_at TEXT
         )
         """)
+
         await db.execute("""
         CREATE TABLE IF NOT EXISTS packages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +93,7 @@ async def init_db():
             is_active INTEGER DEFAULT 1
         )
         """)
+
         await db.execute("""
         CREATE TABLE IF NOT EXISTS examples (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,15 +102,29 @@ async def init_db():
             is_active INTEGER DEFAULT 1
         )
         """)
+
         for key, value in DEFAULT_SETTINGS.items():
-            await db.execute("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)", (key, value))
+            await db.execute(
+                "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
+                (key, value)
+            )
+
         cur = await db.execute("SELECT COUNT(*) FROM packages")
         if (await cur.fetchone())[0] == 0:
-            await db.executemany("INSERT INTO packages(name, description) VALUES(?, ?)", DEFAULT_PACKAGES)
+            await db.executemany(
+                "INSERT INTO packages(name, description) VALUES(?, ?)",
+                DEFAULT_PACKAGES
+            )
+
         cur = await db.execute("SELECT COUNT(*) FROM examples")
         if (await cur.fetchone())[0] == 0:
-            await db.executemany("INSERT INTO examples(title, description) VALUES(?, ?)", DEFAULT_EXAMPLES)
+            await db.executemany(
+                "INSERT INTO examples(title, description) VALUES(?, ?)",
+                DEFAULT_EXAMPLES
+            )
+
         await db.commit()
+
 
 async def get_setting(key: str) -> str:
     async with aiosqlite.connect(DB_PATH) as db:
@@ -96,81 +132,270 @@ async def get_setting(key: str) -> str:
         row = await cur.fetchone()
         return row[0] if row else ""
 
+
 async def set_setting(key: str, value: str):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)", (key, value))
+        await db.execute(
+            "INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)",
+            (key, value)
+        )
         await db.commit()
+
 
 async def get_all_settings() -> dict:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT key, value FROM settings")
         return {k: v for k, v in await cur.fetchall()}
 
+
 async def get_packages():
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT id, name, description FROM packages WHERE is_active=1 ORDER BY id")
+        cur = await db.execute(
+            "SELECT id, name, description FROM packages WHERE is_active=1 ORDER BY id"
+        )
         return await cur.fetchall()
+
 
 async def add_package(name: str, description: str):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT INTO packages(name, description) VALUES(?, ?)", (name, description))
+        await db.execute(
+            "INSERT INTO packages(name, description) VALUES(?, ?)",
+            (name, description)
+        )
         await db.commit()
+
 
 async def get_examples():
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT id, title, description FROM examples WHERE is_active=1 ORDER BY id")
+        cur = await db.execute(
+            "SELECT id, title, description FROM examples WHERE is_active=1 ORDER BY id"
+        )
         return await cur.fetchall()
+
 
 async def add_example(title: str, description: str):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT INTO examples(title, description) VALUES(?, ?)", (title, description))
+        await db.execute(
+            "INSERT INTO examples(title, description) VALUES(?, ?)",
+            (title, description)
+        )
         await db.commit()
 
-async def save_application(user, data: dict, estimated_price: str) -> int:
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+async def save_visitor(user, source: str = "telegram"):
+    now = now_str()
     username = user.username or ""
+    first_name = user.first_name or ""
+    last_name = user.last_name or ""
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT user_id FROM visitors WHERE user_id=?",
+            (user.id,)
+        )
+        row = await cur.fetchone()
+
+        if row:
+            await db.execute("""
+            UPDATE visitors
+            SET username=?,
+                first_name=?,
+                last_name=?,
+                source=?,
+                last_seen=?,
+                visits_count=visits_count+1
+            WHERE user_id=?
+            """, (
+                username,
+                first_name,
+                last_name,
+                source,
+                now,
+                user.id
+            ))
+        else:
+            await db.execute("""
+            INSERT INTO visitors(
+                user_id, username, first_name, last_name, source,
+                first_seen, last_seen, visits_count
+            )
+            VALUES(?, ?, ?, ?, ?, ?, ?, 1)
+            """, (
+                user.id,
+                username,
+                first_name,
+                last_name,
+                source,
+                now,
+                now
+            ))
+
+        await db.commit()
+
+
+async def get_recent_visitors(limit: int = 10):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("""
+        SELECT user_id, username, first_name, last_name, source, first_seen, last_seen, visits_count
+        FROM visitors
+        ORDER BY last_seen DESC
+        LIMIT ?
+        """, (limit,))
+        return await cur.fetchall()
+
+
+async def visitor_stats():
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT COUNT(*) FROM visitors")
+        total = (await cur.fetchone())[0]
+
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM visitors WHERE first_seen LIKE ?",
+            (f"{today}%",)
+        )
+        today_count = (await cur.fetchone())[0]
+
+        cur = await db.execute("SELECT SUM(visits_count) FROM visitors")
+        visits_total = (await cur.fetchone())[0] or 0
+
+        return {
+            "total": total,
+            "today": today_count,
+            "visits_total": visits_total,
+        }
+
+
+async def export_visitors_csv(file_path: str = "data/visitors_export.csv") -> str:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("""
+        SELECT user_id, username, first_name, last_name, source, first_seen, last_seen, visits_count
+        FROM visitors
+        ORDER BY last_seen DESC
+        """)
+        rows = await cur.fetchall()
+
+    with open(file_path, "w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            "user_id",
+            "username",
+            "first_name",
+            "last_name",
+            "source",
+            "first_seen",
+            "last_seen",
+            "visits_count",
+        ])
+        writer.writerows(rows)
+
+    return file_path
+
+
+async def save_application(user, data: dict, estimated_price: str) -> int:
+    now = now_str()
+    username = user.username or ""
+
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
         INSERT OR IGNORE INTO clients(user_id, username, name, phone, first_seen, applications_count)
         VALUES(?, ?, ?, ?, ?, 0)
-        """, (user.id, username, data.get("name", ""), data.get("phone", ""), now))
+        """, (
+            user.id,
+            username,
+            data.get("name", ""),
+            data.get("phone", ""),
+            now
+        ))
+
         await db.execute("""
-        UPDATE clients SET username=?, name=?, phone=?, applications_count=applications_count+1 WHERE user_id=?
-        """, (username, data.get("name", ""), data.get("phone", ""), user.id))
+        UPDATE clients
+        SET username=?, name=?, phone=?, applications_count=applications_count+1
+        WHERE user_id=?
+        """, (
+            username,
+            data.get("name", ""),
+            data.get("phone", ""),
+            user.id
+        ))
+
         cur = await db.execute("""
-        INSERT INTO applications(user_id, username, name, phone, business, bot_type, functions, payments, ai_needed, urgency, comment, estimated_price, created_at)
+        INSERT INTO applications(
+            user_id, username, name, phone, business, bot_type,
+            functions, payments, ai_needed, urgency, comment,
+            estimated_price, created_at
+        )
         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            user.id, username, data.get("name", ""), data.get("phone", ""), data.get("business", ""),
-            data.get("bot_type", ""), data.get("functions", ""), data.get("payments", ""),
-            data.get("ai_needed", ""), data.get("urgency", ""), data.get("comment", ""), estimated_price, now
+            user.id,
+            username,
+            data.get("name", ""),
+            data.get("phone", ""),
+            data.get("business", ""),
+            data.get("bot_type", ""),
+            data.get("functions", ""),
+            data.get("payments", ""),
+            data.get("ai_needed", ""),
+            data.get("urgency", ""),
+            data.get("comment", ""),
+            estimated_price,
+            now
         ))
+
         await db.commit()
         return cur.lastrowid
 
+
 async def get_recent_applications(limit: int = 10):
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT id, name, phone, business, bot_type, status, created_at FROM applications ORDER BY id DESC LIMIT ?", (limit,))
+        cur = await db.execute(
+            "SELECT id, name, phone, business, bot_type, status, created_at FROM applications ORDER BY id DESC LIMIT ?",
+            (limit,)
+        )
         return await cur.fetchall()
+
 
 async def get_application(app_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT * FROM applications WHERE id=?", (app_id,))
         return await cur.fetchone()
 
+
 async def update_status(app_id: int, status: str):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE applications SET status=? WHERE id=?", (status, app_id))
+        await db.execute(
+            "UPDATE applications SET status=? WHERE id=?",
+            (status, app_id)
+        )
         await db.commit()
+
 
 async def stats():
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT COUNT(*) FROM clients")
         clients = (await cur.fetchone())[0]
+
         cur = await db.execute("SELECT COUNT(*) FROM applications")
         apps = (await cur.fetchone())[0]
-        cur = await db.execute("SELECT COUNT(*) FROM applications WHERE urgency LIKE '%сроч%' OR urgency LIKE '%Сроч%'")
+
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM applications WHERE urgency LIKE '%сроч%' OR urgency LIKE '%Сроч%'"
+        )
         urgent = (await cur.fetchone())[0]
-        cur = await db.execute("SELECT COUNT(*) FROM applications WHERE ai_needed LIKE '%Да%' OR ai_needed LIKE '%AI%'")
+
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM applications WHERE ai_needed LIKE '%Да%' OR ai_needed LIKE '%AI%'"
+        )
         ai = (await cur.fetchone())[0]
-        return {"clients": clients, "apps": apps, "urgent": urgent, "ai": ai}
+
+        cur = await db.execute("SELECT COUNT(*) FROM visitors")
+        visitors = (await cur.fetchone())[0]
+
+        return {
+            "clients": clients,
+            "apps": apps,
+            "urgent": urgent,
+            "ai": ai,
+            "visitors": visitors,
+        }

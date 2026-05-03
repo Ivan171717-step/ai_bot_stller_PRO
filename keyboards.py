@@ -45,6 +45,7 @@ def admin_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🆕 Новые заявки"), KeyboardButton(text="📊 Статистика")],
+            [KeyboardButton(text="👥 Посетители"), KeyboardButton(text="📥 Выгрузка клиентов")],
             [KeyboardButton(text="💰 Настроить цены"), KeyboardButton(text="📦 Пакеты")],
             [KeyboardButton(text="🎨 Примеры"), KeyboardButton(text="⚙️ Настройки")],
             [KeyboardButton(text="⬅️ В меню")],
