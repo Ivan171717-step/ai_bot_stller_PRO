@@ -51,6 +51,8 @@ AI_SALES_RULES = (
 
 @router.message(CommandStart())
 async def start(message: Message, state: FSMContext):
+    print("START WORKS", flush=True)
+
     await state.clear()
 
     # Записываем посетителя в Google Sheets после /start
