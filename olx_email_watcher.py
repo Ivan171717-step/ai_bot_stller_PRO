@@ -49,13 +49,14 @@ def fetch_unseen_olx_messages(email_login: str, email_password: str) -> list[ema
         mail.login(email_login, email_password)
         mail.select("INBOX")
 
-        # Gmail/IMAP search: unread emails where sender contains 'olx'.
         status, found_ids = mail.search(None, '(UNSEEN FROM "olx")')
+
         if status != "OK" or not found_ids or not found_ids[0]:
             return messages
 
         for message_id in found_ids[0].split():
             status, data = mail.fetch(message_id, "(RFC822)")
+
             if status != "OK" or not data or not data[0]:
                 continue
 
@@ -89,11 +90,13 @@ async def watch_olx_email(
 
             for message in messages:
                 notification = build_olx_notification(message)
+
                 for admin_id in admin_ids:
                     await bot.send_message(admin_id, notification)
 
         except imaplib.IMAP4.error as error:
             logger.error("Gmail IMAP error while checking OLX emails: %s", error)
+
         except Exception:
             logger.exception("Unexpected error while checking OLX emails")
 
