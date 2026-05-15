@@ -666,8 +666,23 @@ async def process_free_text(message: Message, state: FSMContext, text: str):
         await message.answer("Выберите действие в меню 👇", reply_markup=main_menu())
 
 
+async def try_global_text_command(message: Message, state: FSMContext, bot: Bot) -> bool:
+    text = message.text or ""
+    cmd = detect_command(text, is_admin=message.from_user.id in config.admin_ids)
+    if cmd["intent"] in {
+        "open_menu", "cancel", "confirm_send", "restart_lead",
+        "contact_developer", "admin_forbidden",
+        "open_admin", "export_applications", "export_visitors",
+        "show_stats", "show_visitors", "show_applications"
+    }:
+        return await execute_assistant_command(message, state, bot, text)
+    return False
+
+
 @router.message(F.text)
 async def free_ai_chat_or_fallback(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     if await execute_assistant_command(message, state, bot, message.text or ""):
         return
     await process_free_text(message, state, message.text or "")
