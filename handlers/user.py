@@ -356,6 +356,12 @@ async def lead_comment(message: Message, state: FSMContext):
 @router.message(Lead.confirm, F.text == "✅ Отправить заявку")
 @router.message(F.text == "✅ Отправить заявку")
 async def lead_send(message: Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    has_ai = bool((data.get("ai_command_text") or "").strip())
+    has_form = any((data.get(k) or "").strip() for k in ["name","phone","business","bot_type","functions","payments","ai_needed","urgency","comment"])
+    if not has_ai and not has_form:
+        await message.answer("Сначала опишите задачу текстом/голосом или заполните заявку вручную.", reply_markup=ai_command_kb())
+        return
     await send_application(message, state, bot)
 
 
@@ -432,6 +438,30 @@ async def process_fsm_voice_text(message: Message, state: FSMContext, text: str,
             return True
         await message.answer("Скажите «отправить заявку» или «отмена».", reply_markup=confirm_kb())
         return True
+    if cur == Quiz.purpose.state:
+        await state.update_data(purpose=text)
+        await state.set_state(Quiz.functions)
+        await message.answer("Какие функции нужны?\n\nМожно выбрать кнопку или написать своими словами.", reply_markup=functions_kb())
+        return True
+    if cur == Quiz.functions.state:
+        await state.update_data(functions=text)
+        await state.set_state(Quiz.business)
+        await message.answer("Под какой бизнес нужен бот?", reply_markup=business_kb())
+        return True
+    if cur == Quiz.business.state:
+        await state.update_data(business=text)
+        data = await state.get_data()
+        await state.clear()
+        await message.answer(
+            f"Отлично 👍\n\nЗадача: {data.get('purpose')}\n"
+            f"Функции/пожелания: {data.get('functions')}\n"
+            f"Бизнес: {data.get('business')}\n\n"
+            "Начнём с 1000 грн.\n"
+            "Финальная стоимость зависит от задач и будет согласована с разработчиком.\n\n"
+            "Чтобы перейти дальше — нажмите кнопку «Оформить заявку».",
+            reply_markup=after_quiz_kb(),
+        )
+        return True
 
     return False
 
@@ -447,25 +477,23 @@ async def voice_handler(message: Message, state: FSMContext, bot: Bot):
         return
 
     await state.update_data(last_voice_text=text)
-    fake = Message.model_validate({**message.model_dump(), "text": text})
-    await free_ai_chat_or_fallback(fake, state)
+    await process_free_text(message, state, text)
 
 
-@router.message(F.text)
-async def free_ai_chat_or_fallback(message: Message, state: FSMContext):
+async def process_free_text(message: Message, state: FSMContext, text: str):
     data = await state.get_data()
 
     if data.get("ai_chat_active"):
         persona = data.get("ai_persona", "default")
         try:
-            answer = await ask_ai((message.text or "") + AI_SALES_RULES, persona=persona)
+            answer = await ask_ai((text or "") + AI_SALES_RULES, persona=persona)
             await message.answer(answer, reply_markup=main_menu())
             return
         except Exception:
             await message.answer("AI-консультант временно не отвечает.", reply_markup=main_menu())
             return
 
-    text = (message.text or "").strip()
+    text = (text or "").strip()
     if data.get("ai_command_mode") or "бот" in text.lower() or "заявк" in text.lower():
         old = data.get("ai_command_text", "")
         merged = (old + "\n" + text).strip()
@@ -482,3 +510,8 @@ async def free_ai_chat_or_fallback(message: Message, state: FSMContext):
         await message.answer(answer, reply_markup=main_menu())
     else:
         await message.answer("Выберите действие в меню 👇", reply_markup=main_menu())
+
+
+@router.message(F.text)
+async def free_ai_chat_or_fallback(message: Message, state: FSMContext):
+    await process_free_text(message, state, message.text or "")
