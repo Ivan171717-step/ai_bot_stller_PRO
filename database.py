@@ -7,8 +7,8 @@ os.makedirs("data", exist_ok=True)
 DB_PATH = os.getenv("DB_PATH", "data/bot.db")
 
 DEFAULT_SETTINGS = {
-    "min_price": "2000",
-    "max_price": "4000",
+    "min_price": "1000",
+    "max_price": "4500",
     "urgent_price": "1000",
     "deadline": "1–2 дня",
     "payment_terms": "Оплата по факту выполнения: после согласования, тестирования и передачи готового бота клиенту.",
@@ -182,7 +182,7 @@ async def add_example(title: str, description: str):
         await db.commit()
 
 
-async def save_visitor(user, source: str = "telegram"):
+async def save_visitor(user, source: str = "telegram") -> bool:
     now = now_str()
     username = user.username or ""
     first_name = user.first_name or ""
@@ -196,6 +196,7 @@ async def save_visitor(user, source: str = "telegram"):
         row = await cur.fetchone()
 
         if row:
+            is_new = False
             await db.execute("""
             UPDATE visitors
             SET username=?,
@@ -214,6 +215,7 @@ async def save_visitor(user, source: str = "telegram"):
                 user.id
             ))
         else:
+            is_new = True
             await db.execute("""
             INSERT INTO visitors(
                 user_id, username, first_name, last_name, source,
@@ -231,6 +233,7 @@ async def save_visitor(user, source: str = "telegram"):
             ))
 
         await db.commit()
+        return is_new
 
 
 async def get_recent_visitors(limit: int = 10):
@@ -399,3 +402,18 @@ async def stats():
             "ai": ai,
             "visitors": visitors,
         }
+
+async def export_applications_csv(file_path: str = "data/applications_export.csv") -> str:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("""
+        SELECT id,user_id,username,name,phone,business,bot_type,functions,payments,ai_needed,urgency,comment,estimated_price,status,created_at
+        FROM applications
+        ORDER BY id DESC
+        """)
+        rows = await cur.fetchall()
+
+    with open(file_path, "w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.writer(file)
+        writer.writerow(["id","user_id","username","name","phone","business","bot_type","functions","payments","ai_needed","urgency","comment","estimated_price","status","created_at"])
+        writer.writerows(rows)
+    return file_path

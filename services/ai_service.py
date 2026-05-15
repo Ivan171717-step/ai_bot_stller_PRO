@@ -7,7 +7,7 @@ from services.personas import PERSONAS
 SYSTEM_FALLBACK = (
     "Ты AI-консультант по созданию Telegram-ботов для бизнеса. "
     "Общайся дружелюбно, коротко и по делу. "
-    "Помогай выбрать тип бота, функции, примерную стоимость и плавно веди к оформлению заявки. "
+    "Помогай понять бизнес, предложить тип бота, выгоды и мягко вести к заявке. "
     "Стоимость: СТАРТ от 1000 грн. "
     "Дополнительные задачи добавляют примерно 500–700 грн, но предварительный расчет не выше 4500 грн. "
     "Финальная стоимость согласовывается с разработчиком. "
@@ -38,7 +38,7 @@ async def ask_ai(user_text: str, persona: str = "default") -> str:
             "а я помогу подобрать подходящий вариант 👍"
         )
 
-    if client is None:
+    if (not config.use_ai) or client is None:
         return (
             "AI-консультант пока не подключен: не найден OPENAI_API_KEY.\n\n"
             "Проверьте файл .env и config.py.\n"
@@ -55,7 +55,7 @@ async def ask_ai(user_text: str, persona: str = "default") -> str:
 
     try:
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=config.openai_model,
             messages=[
                 {
                     "role": "system",
