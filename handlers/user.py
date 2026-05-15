@@ -19,11 +19,11 @@ from keyboards import (
     quick_lead_kb,
 )
 from database import save_application, save_visitor
-from services.formatters import lead_summary, admin_lead_text
+from services.formatters import lead_summary, admin_lead_text, internal_admin_note_text
 from services.ai_service import ai_answer, ask_ai
 from services.google_sheets import send_to_sheets
 from services.voice_service import transcribe_voice
-from services.examples_service import load_examples, format_example
+from services.examples_service import load_examples, format_example, search_examples
 
 router = Router()
 
@@ -105,8 +105,10 @@ async def send_application(message: Message, state: FSMContext, bot: Bot):
         "price": estimated,
     })
 
+    analysis = analyze_internal_complexity(data)
+    internal_note = internal_admin_note_text(analysis)
     for admin_id in config.admin_ids:
-        await bot.send_message(admin_id, admin_lead_text(app_id, message.from_user, data, estimated))
+        await bot.send_message(admin_id, admin_lead_text(app_id, message.from_user, data, estimated, internal_note))
 
     await message.answer(
         "Заявка отправлена ✅\n\n"
@@ -376,6 +378,73 @@ async def lead_cancel(message: Message, state: FSMContext):
     await message.answer("Заявка отменена. Можете вернуться в меню.", reply_markup=main_menu())
 
 
+async def execute_assistant_command(message: Message, state: FSMContext, bot: Bot, text: str) -> bool:
+    is_admin = message.from_user.id in config.admin_ids
+    cmd = detect_command(text, is_admin=is_admin)
+    intent = cmd.get("intent")
+
+    if intent in {"open_menu", "cancel"}:
+        await state.clear()
+        await message.answer("Главное меню 👇", reply_markup=main_menu())
+        return True
+    if intent == "contact_developer":
+        await contact_dev(message)
+        return True
+    if intent == "restart_lead":
+        await lead_start(message, state)
+        return True
+    if intent == "confirm_send":
+        await lead_send(message, state, bot)
+        return True
+    if intent == "open_examples":
+        await examples(message)
+        return True
+    if intent == "find_example":
+        found = search_examples(cmd.get("query") or text, limit=3)
+        if not found:
+            await message.answer("Не нашел точный пример. Покажу доступные варианты.")
+            await examples(message)
+        else:
+            for i, ex in enumerate(found, 1):
+                await message.answer(format_example(ex, i), parse_mode="HTML")
+        return True
+    if intent == "start_lead":
+        await lead_start(message, state)
+        return True
+    if intent == "start_ai_consultant":
+        await choose_ai_persona(message, state)
+        return True
+    if intent in {"pick_business_solution", "add_details"}:
+        await state.update_data(ai_command_mode=True)
+        await message.answer("Опишите бизнес и задачи голосом или текстом.", reply_markup=ai_command_kb())
+        return True
+    if intent == "open_admin" and is_admin:
+        await message.answer("Админ-панель открыта.", reply_markup=admin_menu())
+        return True
+    if intent == "export_applications" and is_admin:
+        await admin_handlers.export_applications(message)
+        return True
+    if intent == "export_visitors" and is_admin:
+        await admin_handlers.export_clients(message)
+        return True
+    if intent == "show_stats" and is_admin:
+        await admin_handlers.show_stats(message)
+        return True
+    if intent == "show_visitors" and is_admin:
+        await admin_handlers.show_visitors(message)
+        return True
+    if intent == "create_quick_lead":
+        quick = parse_quick_lead(text, message.from_user.username)
+        await state.update_data(ai_command_mode=True, ai_command_text=text, **quick)
+        await message.answer(build_quick_lead_preview(quick), reply_markup=ai_command_kb())
+        return True
+    if intent == "general_assistant":
+        answer = await ai_answer(text + AI_SALES_RULES)
+        await message.answer(f"{answer}\n\nЕсли хотите, могу сразу оформить заявку.", reply_markup=ai_command_kb())
+        return True
+    return False
+
+
 async def process_fsm_voice_text(message: Message, state: FSMContext, text: str, bot: Bot) -> bool:
     cur = await state.get_state()
     if not cur:
@@ -473,6 +542,8 @@ async def voice_handler(message: Message, state: FSMContext, bot: Bot):
         return await message.answer(err)
 
     await message.answer(f"Распознал: {text}")
+    if await execute_assistant_command(message, state, bot, text):
+        return
     if await process_fsm_voice_text(message, state, text, bot):
         return
 
@@ -513,5 +584,13 @@ async def process_free_text(message: Message, state: FSMContext, text: str):
 
 
 @router.message(F.text)
-async def free_ai_chat_or_fallback(message: Message, state: FSMContext):
+async def free_ai_chat_or_fallback(message: Message, state: FSMContext, bot: Bot):
+    if await execute_assistant_command(message, state, bot, message.text or ""):
+        return
     await process_free_text(message, state, message.text or "")
+
+from keyboards import admin_menu
+from handlers import admin as admin_handlers
+from services.assistant_router import detect_command
+from services.lead_parser import parse_quick_lead, build_quick_lead_preview
+from services.internal_analysis import analyze_internal_complexity

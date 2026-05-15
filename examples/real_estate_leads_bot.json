@@ -1,0 +1,19 @@
+{
+  "title": "Бот заявок недвижимости",
+  "short_description": "Лиды по объектам",
+  "business_type": "Недвижимость",
+  "features": [
+    "Меню",
+    "Заявки"
+  ],
+  "benefits": [
+    "Быстрый запуск",
+    "Рост конверсии"
+  ],
+  "demo_link": "",
+  "screenshots": [],
+  "sales_text": "Подходит для бизнеса и автоматизации общения с клиентами.",
+  "internal_complexity": "medium",
+  "internal_admin_note": "Внутренняя заметка для оценки.",
+  "internal_price_comment": "Оценка после уточнения требований."
+}

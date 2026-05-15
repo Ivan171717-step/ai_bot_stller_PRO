@@ -1,0 +1,19 @@
+{
+  "title": "Бот записи в салон",
+  "short_description": "Онлайн-запись клиентов",
+  "business_type": "Салон красоты",
+  "features": [
+    "Меню",
+    "Заявки"
+  ],
+  "benefits": [
+    "Быстрый запуск",
+    "Рост конверсии"
+  ],
+  "demo_link": "",
+  "screenshots": [],
+  "sales_text": "Подходит для бизнеса и автоматизации общения с клиентами.",
+  "internal_complexity": "simple",
+  "internal_admin_note": "Внутренняя заметка для оценки.",
+  "internal_price_comment": "Оценка после уточнения требований."
+}

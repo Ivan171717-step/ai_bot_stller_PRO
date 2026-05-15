@@ -117,7 +117,7 @@ def after_quiz_kb() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📝 Оформить заявку")],
             [KeyboardButton(text="🎨 Примеры ботов")],
-            [KeyboardButton(text="📞 Связаться с разработчиком")],
+            [KeyboardButton(text="🎨 Примеры ботов")],
             [KeyboardButton(text="⬅️ В меню")],
         ],
         resize_keyboard=True
@@ -162,9 +162,9 @@ def ai_command_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="✅ Отправить заявку")],
-            [KeyboardButton(text="🎙 Добавить детали голосом")],
+            [KeyboardButton(text="✏️ Дополнить голосом")],
             [KeyboardButton(text="📝 Заполнить вручную")],
-            [KeyboardButton(text="📞 Связаться с разработчиком")],
+            [KeyboardButton(text="🎨 Примеры ботов")],
             [KeyboardButton(text="⬅️ В меню")],
         ],
         resize_keyboard=True
@@ -176,7 +176,7 @@ def quick_lead_kb() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="✅ Отправить заявку")],
             [KeyboardButton(text="📝 Заполнить вручную")],
-            [KeyboardButton(text="📞 Связаться с разработчиком")],
+            [KeyboardButton(text="🎨 Примеры ботов")],
             [KeyboardButton(text="⬅️ В меню")],
         ],
         resize_keyboard=True
