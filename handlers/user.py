@@ -1,11 +1,23 @@
 from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 
 from config import config
 from states import Quiz, Lead
-from keyboards import main_menu, persona_keyboard, purpose_kb, functions_kb, business_kb, yes_no_kb, urgency_kb, confirm_kb, after_quiz_kb, ai_command_kb, quick_lead_kb
+from keyboards import (
+    main_menu,
+    persona_keyboard,
+    purpose_kb,
+    functions_kb,
+    business_kb,
+    yes_no_kb,
+    urgency_kb,
+    confirm_kb,
+    after_quiz_kb,
+    ai_command_kb,
+    quick_lead_kb,
+)
 from database import save_application, save_visitor
 from services.formatters import lead_summary, admin_lead_text
 from services.ai_service import ai_answer, ask_ai
@@ -15,17 +27,95 @@ from services.examples_service import load_examples, format_example
 
 router = Router()
 
-AI_SALES_RULES = "\n\nОбязательно используй фразы: «Начнём с 1000 грн» и «Финальная стоимость зависит от задач и будет согласована с разработчиком». Не используй калькулятор."
+WELCOME = (
+    "Здравствуйте 👋\n\n"
+    "Я AI-консультант по созданию Telegram-ботов для бизнеса.\n"
+    "Помогу понять, какой бот подойдет именно вам, и оформить заявку.\n\n"
+    "Начнём с 1000 грн.\n"
+    "Финальная стоимость зависит от задач и будет согласована с разработчиком.\n\n"
+    "Выберите действие ниже 👇"
+)
+
+AI_SALES_RULES = (
+    "\n\nПравила ответа:\n"
+    "1. Веди диалог как AI-консультант по разработке Telegram-ботов.\n"
+    "2. Мягко веди клиента к конкретному следующему действию.\n"
+    "3. Если нужно перейти к разделу, попроси клиента самостоятельно нажать нужную кнопку.\n"
+    "4. Используй фразу: «Начнём с 1000 грн».\n"
+    "5. Всегда добавляй: «Финальная стоимость зависит от задач и будет согласована с разработчиком».\n"
+    "6. Не делай калькулятор и не указывай цены за отдельные функции.\n"
+)
+
+
+def examples_inline_from_files(items: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for ex in items:
+        slug = ex.get("_slug", "")
+        title = ex.get("title", "Пример")
+        rows.append([InlineKeyboardButton(text=f"Хочу такой: {title}", callback_data=f"want_json_example:{slug}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 
 async def notify_new_visitor(bot: Bot, message: Message):
     username = f"@{message.from_user.username}" if message.from_user.username else "Не указано"
-    text = ("👤 Новый посетитель бота\n\n"
-            f"Имя: {message.from_user.first_name or 'Не указано'}\n"
-            f"Username: {username}\n"
-            f"Telegram ID: {message.from_user.id}\n"
-            "Источник: Telegram")
+    text = (
+        "👤 Новый посетитель бота\n\n"
+        f"Имя: {message.from_user.first_name or 'Не указано'}\n"
+        f"Username: {username}\n"
+        f"Telegram ID: {message.from_user.id}\n"
+        "Источник: Telegram"
+    )
     for admin_id in config.admin_ids:
         await bot.send_message(admin_id, text)
+
+
+async def send_application(message: Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    raw = data.get("ai_command_text", "")
+
+    if not data.get("name"):
+        data["name"] = "Не указано"
+    if not data.get("phone"):
+        data["phone"] = f"@{message.from_user.username}" if message.from_user.username else "Не указано"
+
+    data.setdefault("business", "Не указано")
+    data.setdefault("bot_type", "Не указано")
+    data.setdefault("functions", "Не указано")
+    data.setdefault("payments", "Не указано")
+    data.setdefault("ai_needed", "Не указано")
+    data.setdefault("urgency", "Обычный срок")
+    data.setdefault("comment", raw or "Не указано")
+
+    estimated = "Начнём с 1000 грн. Финальная стоимость зависит от задач и будет согласована с разработчиком."
+    app_id = await save_application(message.from_user, data, estimated)
+
+    send_to_sheets("application", {
+        "app_id": app_id,
+        "user_id": message.from_user.id,
+        "username": message.from_user.username or "",
+        "name": data.get("name", ""),
+        "phone": data.get("phone", ""),
+        "business": data.get("business", ""),
+        "bot_type": data.get("bot_type", ""),
+        "functions": data.get("functions", ""),
+        "payments": data.get("payments", ""),
+        "ai_needed": data.get("ai_needed", ""),
+        "urgency": data.get("urgency", ""),
+        "comment": data.get("comment", ""),
+        "price": estimated,
+    })
+
+    for admin_id in config.admin_ids:
+        await bot.send_message(admin_id, admin_lead_text(app_id, message.from_user, data, estimated))
+
+    await message.answer(
+        "Заявка отправлена ✅\n\n"
+        "Начнём с 1000 грн.\n"
+        "Финальная стоимость зависит от задач и будет согласована с разработчиком.",
+        reply_markup=main_menu(),
+    )
+    await state.clear()
+
 
 @router.message(CommandStart())
 async def start(message: Message, state: FSMContext, bot: Bot):
@@ -33,107 +123,362 @@ async def start(message: Message, state: FSMContext, bot: Bot):
     is_new = await save_visitor(message.from_user)
     if is_new:
         await notify_new_visitor(bot, message)
-    await message.answer("Здравствуйте 👋\nНачнём с 1000 грн.\nФинальная стоимость зависит от задач и будет согласована с разработчиком.", reply_markup=main_menu())
+
+    send_to_sheets("visitor", {
+        "user_id": message.from_user.id,
+        "username": message.from_user.username or "",
+        "first_name": message.from_user.first_name or "",
+        "last_name": message.from_user.last_name or "",
+        "source": "telegram"
+    })
+
+    banner = "assets/banner.png"
+    try:
+        await message.answer_photo(FSInputFile(banner), caption=WELCOME, reply_markup=main_menu())
+    except Exception:
+        await message.answer(WELCOME, reply_markup=main_menu())
+
+
+@router.message(F.text == "⬅️ В меню")
+async def menu_back(message: Message, state: FSMContext):
+    await state.update_data(ai_chat_active=False, ai_command_mode=False)
+    await message.answer("Главное меню 👇", reply_markup=main_menu())
+
+
+@router.message(F.text == "🤖 Какой вам нужен бот")
+async def quiz_start(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Давайте быстро поймем задачу.\n\nДля чего вам нужен бот?", reply_markup=purpose_kb())
+    await state.set_state(Quiz.purpose)
+
+
+@router.message(Quiz.purpose)
+async def quiz_purpose(message: Message, state: FSMContext):
+    await state.update_data(purpose=message.text)
+    await message.answer("Какие функции нужны?\n\nМожно выбрать кнопку или написать своими словами.", reply_markup=functions_kb())
+    await state.set_state(Quiz.functions)
+
+
+@router.message(Quiz.functions)
+async def quiz_functions(message: Message, state: FSMContext):
+    await state.update_data(functions=message.text)
+    await message.answer("Под какой бизнес нужен бот?", reply_markup=business_kb())
+    await state.set_state(Quiz.business)
+
+
+@router.message(Quiz.business)
+async def quiz_business(message: Message, state: FSMContext):
+    await state.update_data(business=message.text)
+    data = await state.get_data()
+    await state.clear()
+    await message.answer(
+        f"Отлично 👍\n\nЗадача: {data.get('purpose')}\n"
+        f"Функции/пожелания: {data.get('functions')}\n"
+        f"Бизнес: {data.get('business')}\n\n"
+        "Начнём с 1000 грн.\n"
+        "Финальная стоимость зависит от задач и будет согласована с разработчиком.\n\n"
+        "Чтобы перейти дальше — нажмите кнопку «Оформить заявку».",
+        reply_markup=after_quiz_kb(),
+    )
+
+
+@router.message(F.text == "🧠 AI-консультант")
+async def choose_ai_persona(message: Message, state: FSMContext):
+    await state.update_data(ai_chat_active=False)
+    await message.answer(
+        "Выберите стиль AI-консультанта 👇\n\n"
+        "🌸 Анастейша — мягко, дружелюбно и понятно\n"
+        "🧔 Джейсон — уверенно, по делу и с лёгким юмором\n"
+        "🤖 Стандартный — спокойно и нейтрально",
+        reply_markup=persona_keyboard(),
+    )
+
+
+@router.callback_query(F.data.startswith("persona:"))
+async def set_persona(callback: CallbackQuery, state: FSMContext):
+    persona = callback.data.split(":")[1]
+    await state.update_data(ai_persona=persona, ai_chat_active=True)
+    await callback.message.answer(
+        "Отлично. Расскажите про ваш бизнес и задачи для бота.\n\n"
+        "Начнём с 1000 грн.\n"
+        "Финальная стоимость зависит от задач и будет согласована с разработчиком.",
+        reply_markup=main_menu(),
+    )
+    await callback.answer()
+
+
+@router.message(F.text == "🏢 Под какой бизнес")
+async def business_info(message: Message):
+    await message.answer(
+        "Ботов можно сделать почти под любой бизнес: услуги, магазины, доставка, обучение, запись клиентов, металлолом, недвижимость, авто.\n\n"
+        "Чтобы я задал несколько вопросов — нажмите «Какой вам нужен бот».\n"
+        "Если уже готовы — нажмите «Оформить заявку».",
+        reply_markup=main_menu(),
+    )
+
 
 @router.message(F.text == "🎙 AI-команда")
 async def ai_command_start(message: Message, state: FSMContext):
     await state.update_data(ai_command_mode=True, ai_command_text="")
-    await message.answer("Отправьте голосовое или текстовое сообщение.\nРасскажите, какой бот вам нужен, для какого бизнеса, какие функции нужны и как с вами связаться.")
+    await message.answer(
+        "Отправьте голосовое или текстовое сообщение.\n"
+        "Расскажите, какой бот вам нужен, для какого бизнеса, какие функции нужны и как с вами связаться.",
+        reply_markup=ai_command_kb(),
+    )
+
+
+@router.message(F.text == "🎙 Добавить детали голосом")
+async def ai_command_add_details(message: Message):
+    await message.answer("Отправьте дополнительные детали голосом или текстом — я обновлю разбор задачи.")
+
 
 @router.message(F.text == "🎯 Подобрать решение под мой бизнес")
 async def pick_business(message: Message, state: FSMContext):
     await state.update_data(ai_command_mode=True)
     await message.answer("Напишите или отправьте голосом сферу бизнеса, и я предложу структуру бота.")
 
+
 @router.message(F.text == "🎨 Примеры ботов")
 async def examples(message: Message):
     items = load_examples()
     if not items:
         return await message.answer("Примеры пока не добавлены.")
+
     for i, ex in enumerate(items, 1):
         await message.answer(format_example(ex, i), parse_mode="HTML")
-        await message.answer("Нажмите: Хочу такой бот", reply_markup=quick_lead_kb())
 
+    await message.answer("Выберите пример, который вам ближе 👇", reply_markup=examples_inline_from_files(items))
+
+
+@router.callback_query(F.data.startswith("want_json_example:"))
+async def want_json_example(callback: CallbackQuery, state: FSMContext):
+    slug = callback.data.split(":", 1)[1]
+    selected = next((x for x in load_examples() if x.get("_slug") == slug), None)
+    title = selected.get("title", "Пример") if selected else "Пример"
+    await state.update_data(bot_type=title)
+    await callback.message.answer(
+        f"Отличный выбор: {title}.\n\n"
+        "Начнём с 1000 грн.\n"
+        "Финальная стоимость зависит от задач и будет согласована с разработчиком.\n\n"
+        "Как вас зовут?"
+    )
+    await state.set_state(Lead.name)
+    await callback.answer()
+
+
+@router.message(F.text == "📞 Связаться с разработчиком")
+async def contact_dev(message: Message):
+    await message.answer(
+        f"Можно написать разработчику напрямую: @{config.developer_username}\n\n"
+        "Но лучше оставьте заявку здесь — я передам все данные автоматически.",
+        reply_markup=main_menu(),
+    )
+
+
+@router.message(F.text == "📝 Заполнить вручную")
 @router.message(F.text == "📝 Оформить заявку")
 async def lead_start(message: Message, state: FSMContext):
-    await state.clear(); await state.set_state(Lead.name)
-    await message.answer("Как вас зовут?")
+    await state.clear()
+    await message.answer(
+        "Отлично 👍 Оформим заявку.\n\n"
+        "Начнём с 1000 грн.\n"
+        "Финальная стоимость зависит от задач и будет согласована с разработчиком.\n\n"
+        "Как вас зовут?"
+    )
+    await state.set_state(Lead.name)
+
 
 @router.message(Lead.name)
 async def lead_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text); await state.set_state(Lead.phone); await message.answer("Введите номер телефона или Telegram для связи:")
+    await state.update_data(name=message.text)
+    await message.answer("Введите номер телефона или Telegram для связи:")
+    await state.set_state(Lead.phone)
+
 
 @router.message(Lead.phone)
 async def lead_phone(message: Message, state: FSMContext):
-    await state.update_data(phone=message.text); await state.set_state(Lead.business); await message.answer("Для какого бизнеса нужен бот?", reply_markup=business_kb())
+    await state.update_data(phone=message.text)
+    await message.answer("Для какого бизнеса нужен бот?", reply_markup=business_kb())
+    await state.set_state(Lead.business)
+
 
 @router.message(Lead.business)
 async def lead_business(message: Message, state: FSMContext):
-    await state.update_data(business=message.text); await state.set_state(Lead.bot_type); await message.answer("Какой бот нужен?", reply_markup=purpose_kb())
+    await state.update_data(business=message.text)
+    await message.answer("Какой бот нужен?", reply_markup=purpose_kb())
+    await state.set_state(Lead.bot_type)
+
 
 @router.message(Lead.bot_type)
 async def lead_bot_type(message: Message, state: FSMContext):
-    await state.update_data(bot_type=message.text); await state.set_state(Lead.functions); await message.answer("Какие функции нужны?", reply_markup=functions_kb())
+    await state.update_data(bot_type=message.text)
+    await message.answer("Какие функции, пожелания и комментарии по боту?", reply_markup=functions_kb())
+    await state.set_state(Lead.functions)
+
 
 @router.message(Lead.functions)
 async def lead_functions(message: Message, state: FSMContext):
-    await state.update_data(functions=message.text); await state.set_state(Lead.payments); await message.answer("Нужна ли оплата в боте?", reply_markup=yes_no_kb())
+    await state.update_data(functions=message.text)
+    await message.answer("Нужна ли оплата в боте?", reply_markup=yes_no_kb())
+    await state.set_state(Lead.payments)
+
 
 @router.message(Lead.payments)
 async def lead_payments(message: Message, state: FSMContext):
-    await state.update_data(payments=message.text); await state.set_state(Lead.ai_needed); await message.answer("Нужен AI-консультант?", reply_markup=yes_no_kb())
+    await state.update_data(payments=message.text)
+    await message.answer("Нужен AI-консультант?", reply_markup=yes_no_kb())
+    await state.set_state(Lead.ai_needed)
+
 
 @router.message(Lead.ai_needed)
 async def lead_ai(message: Message, state: FSMContext):
-    await state.update_data(ai_needed=message.text); await state.set_state(Lead.urgency); await message.answer("По срокам?", reply_markup=urgency_kb())
+    await state.update_data(ai_needed=message.text)
+    await message.answer("По срокам как удобнее?", reply_markup=urgency_kb())
+    await state.set_state(Lead.urgency)
+
 
 @router.message(Lead.urgency)
 async def lead_urgency(message: Message, state: FSMContext):
-    await state.update_data(urgency=message.text); await state.set_state(Lead.comment); await message.answer("Комментарий:")
+    await state.update_data(urgency=message.text)
+    await message.answer("Добавьте пожелания или комментарии. Если нечего добавить — напишите «нет».")
+    await state.set_state(Lead.comment)
+
 
 @router.message(Lead.comment)
 async def lead_comment(message: Message, state: FSMContext):
     await state.update_data(comment=message.text)
-    data = await state.get_data(); est = "Начнём с 1000 грн. Финальная стоимость зависит от задач и будет согласована с разработчиком."
+    data = await state.get_data()
+    estimated = "Начнём с 1000 грн. Финальная стоимость зависит от задач и будет согласована с разработчиком."
+    await message.answer(lead_summary(data, estimated), reply_markup=confirm_kb())
     await state.set_state(Lead.confirm)
-    await message.answer(lead_summary(data, est), reply_markup=confirm_kb())
+
 
 @router.message(Lead.confirm, F.text == "✅ Отправить заявку")
 @router.message(F.text == "✅ Отправить заявку")
 async def lead_send(message: Message, state: FSMContext, bot: Bot):
-    data = await state.get_data()
-    raw = data.get("ai_command_text", "")
-    if not data.get("name"): data["name"] = "Не указано"
-    if not data.get("phone"): data["phone"] = f"@{message.from_user.username}" if message.from_user.username else "Не указано"
-    data.setdefault("business", "Не указано"); data.setdefault("bot_type", "Не указано"); data.setdefault("functions", "Не указано")
-    data.setdefault("payments", "Не указано"); data.setdefault("ai_needed", "Не указано"); data.setdefault("urgency", "Обычный срок")
-    data.setdefault("comment", raw or "Не указано")
-    est = "Начнём с 1000 грн. Финальная стоимость зависит от задач и будет согласована с разработчиком."
-    app_id = await save_application(message.from_user, data, est)
-    for admin_id in config.admin_ids:
-        await bot.send_message(admin_id, admin_lead_text(app_id, message.from_user, data, est))
-    await message.answer("Заявка отправлена ✅", reply_markup=main_menu()); await state.clear()
+    await send_application(message, state, bot)
+
+
+@router.message(Lead.confirm, F.text == "✏️ Заполнить заново")
+async def lead_restart(message: Message, state: FSMContext):
+    await lead_start(message, state)
+
+
+@router.message(Lead.confirm, F.text == "❌ Отменить")
+async def lead_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Заявка отменена. Можете вернуться в меню.", reply_markup=main_menu())
+
+
+async def process_fsm_voice_text(message: Message, state: FSMContext, text: str, bot: Bot) -> bool:
+    cur = await state.get_state()
+    if not cur:
+        return False
+
+    if cur == Lead.name.state:
+        await state.update_data(name=text)
+        await state.set_state(Lead.phone)
+        await message.answer("Введите номер телефона или Telegram для связи:")
+        return True
+    if cur == Lead.phone.state:
+        await state.update_data(phone=text)
+        await state.set_state(Lead.business)
+        await message.answer("Для какого бизнеса нужен бот?", reply_markup=business_kb())
+        return True
+    if cur == Lead.business.state:
+        await state.update_data(business=text)
+        await state.set_state(Lead.bot_type)
+        await message.answer("Какой бот нужен?", reply_markup=purpose_kb())
+        return True
+    if cur == Lead.bot_type.state:
+        await state.update_data(bot_type=text)
+        await state.set_state(Lead.functions)
+        await message.answer("Какие функции, пожелания и комментарии по боту?", reply_markup=functions_kb())
+        return True
+    if cur == Lead.functions.state:
+        await state.update_data(functions=text)
+        await state.set_state(Lead.payments)
+        await message.answer("Нужна ли оплата в боте?", reply_markup=yes_no_kb())
+        return True
+    if cur == Lead.payments.state:
+        await state.update_data(payments=text)
+        await state.set_state(Lead.ai_needed)
+        await message.answer("Нужен AI-консультант?", reply_markup=yes_no_kb())
+        return True
+    if cur == Lead.ai_needed.state:
+        await state.update_data(ai_needed=text)
+        await state.set_state(Lead.urgency)
+        await message.answer("По срокам как удобнее?", reply_markup=urgency_kb())
+        return True
+    if cur == Lead.urgency.state:
+        await state.update_data(urgency=text)
+        await state.set_state(Lead.comment)
+        await message.answer("Добавьте пожелания или комментарии. Если нечего добавить — напишите «нет».")
+        return True
+    if cur == Lead.comment.state:
+        await state.update_data(comment=text)
+        data = await state.get_data()
+        estimated = "Начнём с 1000 грн. Финальная стоимость зависит от задач и будет согласована с разработчиком."
+        await message.answer(lead_summary(data, estimated), reply_markup=confirm_kb())
+        await state.set_state(Lead.confirm)
+        return True
+    if cur == Lead.confirm.state:
+        low = text.lower()
+        if any(x in low for x in ["отправ", "да", "подтверж"]):
+            await send_application(message, state, bot)
+            return True
+        if any(x in low for x in ["отмена", "отмен", "нет"]):
+            await lead_cancel(message, state)
+            return True
+        await message.answer("Скажите «отправить заявку» или «отмена».", reply_markup=confirm_kb())
+        return True
+
+    return False
+
 
 @router.message(F.voice | F.audio)
 async def voice_handler(message: Message, state: FSMContext, bot: Bot):
     text, err = await transcribe_voice(bot, message)
     if err:
         return await message.answer(err)
+
+    await message.answer(f"Распознал: {text}")
+    if await process_fsm_voice_text(message, state, text, bot):
+        return
+
     await state.update_data(last_voice_text=text)
     fake = Message.model_validate({**message.model_dump(), "text": text})
-    await free_text(fake, state)
+    await free_ai_chat_or_fallback(fake, state)
+
 
 @router.message(F.text)
-async def free_text(message: Message, state: FSMContext):
+async def free_ai_chat_or_fallback(message: Message, state: FSMContext):
     data = await state.get_data()
-    if await state.get_state():
-        return
-    text = message.text or ""
+
+    if data.get("ai_chat_active"):
+        persona = data.get("ai_persona", "default")
+        try:
+            answer = await ask_ai((message.text or "") + AI_SALES_RULES, persona=persona)
+            await message.answer(answer, reply_markup=main_menu())
+            return
+        except Exception:
+            await message.answer("AI-консультант временно не отвечает.", reply_markup=main_menu())
+            return
+
+    text = (message.text or "").strip()
     if data.get("ai_command_mode") or "бот" in text.lower() or "заявк" in text.lower():
         old = data.get("ai_command_text", "")
         merged = (old + "\n" + text).strip()
-        await state.update_data(ai_command_text=merged)
-        ans = await ai_answer(merged + AI_SALES_RULES)
-        await message.answer(f"Я понял задачу 👍\n\n{ans}\n\nХотите отправить заявку разработчику?", reply_markup=ai_command_kb())
+        await state.update_data(ai_command_mode=True, ai_command_text=merged)
+        answer = await ai_answer(merged + AI_SALES_RULES)
+        await message.answer(
+            f"Я понял задачу 👍\n\n{answer}\n\nХотите отправить заявку разработчику?",
+            reply_markup=ai_command_kb(),
+        )
         return
-    await message.answer("Выберите действие в меню 👇", reply_markup=main_menu())
+
+    answer = await ai_answer(text + AI_SALES_RULES)
+    if answer:
+        await message.answer(answer, reply_markup=main_menu())
+    else:
+        await message.answer("Выберите действие в меню 👇", reply_markup=main_menu())

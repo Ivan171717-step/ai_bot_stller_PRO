@@ -74,8 +74,8 @@ def functions_kb() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="Кнопки и меню"), KeyboardButton(text="Прием заявок")],
             [KeyboardButton(text="CRM / таблица"), KeyboardButton(text="Уведомления админу")],
             [KeyboardButton(text="Оплата"), KeyboardButton(text="AI-ответы")],
-            [KeyboardButton(text="Каталог"), KeyboardButton(text="Расчет стоимости")],
-            [KeyboardButton(text="Фото"), KeyboardButton(text="Геолокация")],
+            [KeyboardButton(text="Каталог"), KeyboardButton(text="Фото")],
+            [KeyboardButton(text="Геолокация")],
             [KeyboardButton(text="Готово")],
         ],
         resize_keyboard=True
