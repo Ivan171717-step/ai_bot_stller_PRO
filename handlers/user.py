@@ -168,21 +168,27 @@ async def quiz_start(message: Message, state: FSMContext):
 
 
 @router.message(Quiz.purpose)
-async def quiz_purpose(message: Message, state: FSMContext):
+async def quiz_purpose(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(purpose=message.text)
     await message.answer("Какие функции нужны?\n\nМожно выбрать кнопку или написать своими словами.", reply_markup=functions_kb())
     await state.set_state(Quiz.functions)
 
 
 @router.message(Quiz.functions)
-async def quiz_functions(message: Message, state: FSMContext):
+async def quiz_functions(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(functions=message.text)
     await message.answer("Под какой бизнес нужен бот?", reply_markup=business_kb())
     await state.set_state(Quiz.business)
 
 
 @router.message(Quiz.business)
-async def quiz_business(message: Message, state: FSMContext):
+async def quiz_business(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(business=message.text)
     data = await state.get_data()
     await state.clear()
@@ -244,7 +250,8 @@ async def ai_command_start(message: Message, state: FSMContext):
 
 @router.message(F.text == "✏️ Дополнить голосом")
 @router.message(F.text == "🎙 Добавить детали голосом")
-async def ai_command_add_details(message: Message):
+async def ai_command_add_details(message: Message, state: FSMContext):
+    await state.update_data(ai_command_mode=True)
     await message.answer("Отправьте дополнительные детали голосом или текстом — я обновлю разбор задачи.")
 
 
@@ -305,63 +312,81 @@ async def lead_start(message: Message, state: FSMContext):
 
 
 @router.message(Lead.name)
-async def lead_name(message: Message, state: FSMContext):
+async def lead_name(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(name=message.text)
     await message.answer("Введите номер телефона или Telegram для связи:")
     await state.set_state(Lead.phone)
 
 
 @router.message(Lead.phone)
-async def lead_phone(message: Message, state: FSMContext):
+async def lead_phone(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(phone=message.text)
     await message.answer("Для какого бизнеса нужен бот?", reply_markup=business_kb())
     await state.set_state(Lead.business)
 
 
 @router.message(Lead.business)
-async def lead_business(message: Message, state: FSMContext):
+async def lead_business(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(business=message.text)
     await message.answer("Какой бот нужен?", reply_markup=purpose_kb())
     await state.set_state(Lead.bot_type)
 
 
 @router.message(Lead.bot_type)
-async def lead_bot_type(message: Message, state: FSMContext):
+async def lead_bot_type(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(bot_type=message.text)
     await message.answer("Какие функции, пожелания и комментарии по боту?", reply_markup=functions_kb())
     await state.set_state(Lead.functions)
 
 
 @router.message(Lead.functions)
-async def lead_functions(message: Message, state: FSMContext):
+async def lead_functions(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(functions=message.text)
     await message.answer("Нужна ли оплата в боте?", reply_markup=yes_no_kb())
     await state.set_state(Lead.payments)
 
 
 @router.message(Lead.payments)
-async def lead_payments(message: Message, state: FSMContext):
+async def lead_payments(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(payments=message.text)
     await message.answer("Нужен AI-консультант?", reply_markup=yes_no_kb())
     await state.set_state(Lead.ai_needed)
 
 
 @router.message(Lead.ai_needed)
-async def lead_ai(message: Message, state: FSMContext):
+async def lead_ai(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(ai_needed=message.text)
     await message.answer("По срокам как удобнее?", reply_markup=urgency_kb())
     await state.set_state(Lead.urgency)
 
 
 @router.message(Lead.urgency)
-async def lead_urgency(message: Message, state: FSMContext):
+async def lead_urgency(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(urgency=message.text)
     await message.answer("Добавьте пожелания или комментарии. Если нечего добавить — напишите «нет».")
     await state.set_state(Lead.comment)
 
 
 @router.message(Lead.comment)
-async def lead_comment(message: Message, state: FSMContext):
+async def lead_comment(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(comment=message.text)
     data = await state.get_data()
     estimated = "Начнём с 1000 грн. Финальная стоимость зависит от задач и будет согласована с разработчиком."
