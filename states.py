@@ -20,6 +20,10 @@ class Lead(StatesGroup):
     comment = State()
     confirm = State()
 
+class VoiceLead(StatesGroup):
+    waiting_voice = State()
+    confirm = State()
+
 class AdminEdit(StatesGroup):
     min_price = State()
     max_price = State()
