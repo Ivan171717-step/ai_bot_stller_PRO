@@ -15,10 +15,17 @@ def lead_summary(data: dict, estimated: str) -> str:
 
 
 def internal_admin_note_text(analysis: dict) -> str:
+    complexity = analysis.get("complexity", "simple")
+    if complexity == "simple":
+        return (
+            "🧠 Внутренний комментарий AI: простая заявка.\n"
+            "Уточнить: кнопки, куда отправлять заявки, нужно ли сохранять клиентов."
+        )
+
     q = "\n".join(f"— {x}" for x in analysis.get("questions", [])) or "— Уточняющие вопросы не требуются"
     return (
         "🧠 Внутренний комментарий AI\n"
-        f"Сложность: {analysis.get('complexity', 'simple').upper()}\n"
+        f"Сложность: {complexity.upper()}\n"
         f"Почему: {analysis.get('admin_note', '-')}\n"
         f"Ориентир для себя: {analysis.get('price_comment', '-')}\n"
         f"Что уточнить:\n{q}"

@@ -401,6 +401,9 @@ async def execute_assistant_command(message: Message, state: FSMContext, bot: Bo
         await state.clear()
         await message.answer("Главное меню 👇", reply_markup=main_menu())
         return True
+    if intent == "admin_forbidden":
+        await message.answer("Этот раздел доступен только администратору.", reply_markup=main_menu())
+        return True
     if intent == "contact_developer":
         await contact_dev(message)
         return True
@@ -416,11 +419,19 @@ async def execute_assistant_command(message: Message, state: FSMContext, bot: Bo
     if intent == "find_example":
         found = search_examples(cmd.get("query") or text, limit=3)
         if not found:
-            await message.answer("Не нашел точный пример. Покажу доступные варианты.")
+            await message.answer("Точного примера не нашёл. Покажу доступные варианты.")
             await examples(message)
         else:
+            last_title = None
             for i, ex in enumerate(found, 1):
                 await message.answer(format_example(ex, i), parse_mode="HTML")
+                last_title = ex.get("title")
+            if last_title:
+                await state.update_data(last_example_title=last_title)
+            await message.answer(
+                "Хотите похожий бот? Можете сказать «хочу такой бот» или нажать кнопку.",
+                reply_markup=quick_lead_kb(),
+            )
         return True
     if intent == "start_lead":
         await lead_start(message, state)
@@ -430,7 +441,7 @@ async def execute_assistant_command(message: Message, state: FSMContext, bot: Bo
         return True
     if intent in {"pick_business_solution", "add_details"}:
         await state.update_data(ai_command_mode=True)
-        await message.answer("Опишите бизнес и задачи голосом или текстом.", reply_markup=ai_command_kb())
+        await message.answer("Пришлите дополнительные детали голосом или текстом — я добавлю их к текущему описанию.", reply_markup=ai_command_kb())
         return True
     if intent == "open_admin" and is_admin:
         await message.answer("Админ-панель открыта.", reply_markup=admin_menu())
@@ -450,7 +461,15 @@ async def execute_assistant_command(message: Message, state: FSMContext, bot: Bo
             return True
         lines = ["🆕 Последние заявки:"]
         for app_id, name, phone, business, bot_type, status, created_at in rows[:10]:
-            lines.append(f"№{app_id} | {created_at} | {name} | {business} | {bot_type} | {status}")
+            lines.append(
+                f"\n№{app_id}\n"
+                f"Дата: {created_at}\n"
+                f"Имя: {name}\n"
+                f"Телефон: {phone}\n"
+                f"Бизнес: {business}\n"
+                f"Тип: {bot_type}\n"
+                f"Статус: {status}\n\n---"
+            )
         await message.answer("\n".join(lines), reply_markup=admin_menu())
         return True
     if intent == "show_stats" and is_admin:
@@ -488,9 +507,19 @@ async def execute_assistant_command(message: Message, state: FSMContext, bot: Bo
         await message.answer(text_out, reply_markup=admin_menu())
         return True
     if intent == "create_quick_lead":
-        quick = parse_quick_lead(text, message.from_user.username)
-        await state.update_data(ai_command_mode=True, ai_command_text=text, **quick)
-        await message.answer(build_quick_lead_preview(quick), reply_markup=ai_command_kb())
+        data = await state.get_data()
+        if "хочу такой бот" in (text or "").lower() and data.get("last_example_title"):
+            quick = parse_quick_lead(text, message.from_user.username)
+            quick["bot_type"] = data.get("last_example_title")
+        else:
+            quick = parse_quick_lead(text, message.from_user.username)
+        old = (data.get("ai_command_text") or "").strip()
+        merged = f"{old}\n{text}".strip() if old else (text or "")
+        await state.update_data(ai_command_mode=True, ai_command_text=merged, **quick)
+        await message.answer(
+            build_quick_lead_preview(quick) + "\n\nМожете сказать голосом:\n— отправить заявку\n— дополнить\n— заполнить вручную\n— меню",
+            reply_markup=ai_command_kb(),
+        )
         return True
     if intent == "general_assistant":
         answer = await ai_answer(text + AI_SALES_RULES)

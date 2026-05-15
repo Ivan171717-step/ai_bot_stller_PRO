@@ -1,32 +1,51 @@
 import re
 
 
+STOP_WORDS = {
+    "покажи", "показать", "есть", "хочу", "пример", "примеры", "бота", "бот", "боты", "ботов",
+    "решение", "для", "под", "какой", "какие", "можно", "сделать", "нужен", "нужна", "нужны",
+    "с", "по"
+}
+
+
 def normalize_text(text: str) -> str:
-    text = (text or "").lower().strip()
-    text = text.replace("ё", "е")
+    text = (text or "").lower().strip().replace("ё", "е")
     text = re.sub(r"[^\w\s@+\-]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
+def clean_query(query: str) -> str:
+    words = [w for w in normalize_text(query).split() if w not in STOP_WORDS]
+    normalize_map = {
+        "магазина": "магазин",
+        "салона": "салон",
+        "доставки": "доставка",
+    }
+    words = [normalize_map.get(w, w) for w in words]
+    cleaned = " ".join(words).strip()
+    if cleaned.startswith("с "):
+        cleaned = cleaned[2:].strip()
+    return cleaned
+
+
 def extract_query(text: str) -> str:
     normalized = normalize_text(text)
-    patterns = [
+    for p in [
+        r"(?:покажи|показать|есть|хочу|какой|какие)\s+(.+)$",
         r"(?:пример|бот|решение)\s+(?:для|под)\s+(.+)$",
-        r"(?:покажи|есть|хочу)\s+(.+)$",
-    ]
-    for p in patterns:
+    ]:
         m = re.search(p, normalized)
         if m:
-            return m.group(1).strip(" ?!.,")
-    for token in ["магазин", "доставка", "салон", "webapp", "ai", "сложн"]:
+            return clean_query(m.group(1))
+    for token in ["webapp", "сложные", "ai", "магазин", "доставка", "салон"]:
         if token in normalized:
-            return token
-    return ""
+            return clean_query(token)
+    return clean_query(normalized)
 
 
 def looks_like_lead_request(text: str) -> bool:
     t = normalize_text(text)
-    return any(x in t for x in ["нужен бот", "хочу бот", "сделайте бота", "бот для", "оформить заявку"])
+    return any(x in t for x in ["нужен бот", "хочу бот", "сделайте бота", "бот для", "разработайте бота"])
 
 
 def looks_like_question(text: str) -> bool:
@@ -42,7 +61,7 @@ def detect_command(text: str, is_admin: bool = False) -> dict:
     def out(intent: str, confidence: float = 0.9):
         return {"intent": intent, "confidence": confidence, "query": query, "raw_text": raw}
 
-    if any(x in t for x in ["вернись в меню", "главное меню", "в меню", "назад", "меню"]):
+    if t in {"меню", "главное меню", "в меню", "вернись в меню", "назад в меню", "открой меню", "перейди в меню"}:
         return out("open_menu")
     if any(x in t for x in ["отмена", "отменить"]):
         return out("cancel")
@@ -52,10 +71,16 @@ def detect_command(text: str, is_admin: bool = False) -> dict:
         return out("restart_lead")
     if any(x in t for x in ["связаться с разработчиком", "контакт разработчика", "написать разработчику"]):
         return out("contact_developer")
+    if any(x in t for x in ["хочу такой бот"]):
+        return out("create_quick_lead", 0.85)
+
+    admin_words = ["покажи заявки", "выгрузи заявки", "админка", "статистика", "посетители", "кто заходил", "экспорт заявок", "экспорт посетителей", "выгрузи клиентов"]
+    if not is_admin and any(x in t for x in admin_words):
+        return out("admin_forbidden")
 
     if any(x in t for x in ["открой примеры", "покажи примеры", "какие боты можно сделать", "примеры ботов"]):
         return out("open_examples")
-    if any(x in t for x in ["покажи пример", "есть пример", "пример для", "покажи webapp", "сложные боты", "ботов с ai"]):
+    if any(x in t for x in ["покажи пример", "есть пример", "пример для", "покажи webapp", "сложные боты", "ботов с ai", "какой бот можно сделать"]):
         return out("find_example", 0.85)
     if any(x in t for x in ["оформить заявку", "хочу оставить заявку", "создать заявку"]):
         return out("start_lead")
@@ -68,10 +93,10 @@ def detect_command(text: str, is_admin: bool = False) -> dict:
 
     if is_admin and any(x in t for x in ["админка", "покажи админку", "открой админку"]):
         return out("open_admin")
-    if is_admin and any(x in t for x in ["выгрузи заявки", "экспорт заявок"]):
-        return out("export_applications")
     if is_admin and any(x in t for x in ["покажи заявки"]):
         return out("show_applications")
+    if is_admin and any(x in t for x in ["выгрузи заявки", "экспорт заявок"]):
+        return out("export_applications")
     if is_admin and any(x in t for x in ["выгрузи клиентов", "экспорт посетителей"]):
         return out("export_visitors")
     if is_admin and any(x in t for x in ["статистика", "покажи статистику"]):

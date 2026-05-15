@@ -117,7 +117,7 @@ def after_quiz_kb() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📝 Оформить заявку")],
             [KeyboardButton(text="🎨 Примеры ботов")],
-            [KeyboardButton(text="🎨 Примеры ботов")],
+            [KeyboardButton(text="📞 Связаться с разработчиком")],
             [KeyboardButton(text="⬅️ В меню")],
         ],
         resize_keyboard=True
