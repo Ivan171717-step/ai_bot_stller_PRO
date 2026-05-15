@@ -417,6 +417,16 @@ async def lead_cancel(message: Message, state: FSMContext):
     await message.answer("Заявка отменена. Можете вернуться в меню.", reply_markup=main_menu())
 
 
+@router.message(Lead.confirm)
+async def lead_confirm_any_text(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
+    await message.answer(
+        "Скажите «отправить заявку», «заполнить заново», «отмена» или «меню».",
+        reply_markup=confirm_kb(),
+    )
+
+
 async def execute_assistant_command(message: Message, state: FSMContext, bot: Bot, text: str) -> bool:
     is_admin = message.from_user.id in config.admin_ids
     cmd = detect_command(text, is_admin=is_admin)
