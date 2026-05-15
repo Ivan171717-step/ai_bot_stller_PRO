@@ -6,7 +6,7 @@ EXAMPLES_DIR = Path("examples")
 
 def load_examples() -> list[dict]:
     EXAMPLES_DIR.mkdir(exist_ok=True)
-    items: list[dict] = []
+    items = []
     for fp in sorted(EXAMPLES_DIR.glob("*.json")):
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
@@ -17,22 +17,34 @@ def load_examples() -> list[dict]:
     return items
 
 
-def find_example(query: str) -> dict | None:
-    q = query.lower().strip()
+def search_examples(query: str, limit: int = 3) -> list[dict]:
+    q = (query or "").lower().strip()
+    tokens = [t for t in q.split() if t]
+    ranked = []
     for ex in load_examples():
-        hay = " ".join([
-            ex.get("title", ""),
-            ex.get("business_type", ""),
-            " ".join(ex.get("features", [])),
-        ]).lower()
-        if q in hay:
-            return ex
-    return None
+        hay_parts = [ex.get("title", ""), ex.get("short_description", ""), ex.get("business_type", ""), " ".join(ex.get("features", [])), " ".join(ex.get("benefits", [])), ex.get("sales_text", "")]
+        hay = " ".join(hay_parts).lower()
+        score = 0
+        if q and q in hay:
+            score += 10
+        for t in tokens:
+            if t in hay:
+                score += 2
+        if q in ["сложные", "hard"] and ex.get("internal_complexity") == "hard":
+            score += 12
+        if "ai" in q and "ai" in hay:
+            score += 8
+        if "webapp" in q and "webapp" in hay:
+            score += 8
+        if score > 0:
+            ranked.append((score, ex))
+    ranked.sort(key=lambda x: x[0], reverse=True)
+    return [x[1] for x in ranked[:limit]]
 
 
 def format_example(ex: dict, index: int | None = None) -> str:
     prefix = f"{index}. " if index else ""
-    text = (
+    return (
         f"{prefix}<b>{ex.get('title', 'Пример')}</b>\n"
         f"{ex.get('short_description', '')}\n\n"
         f"<b>Бизнес:</b> {ex.get('business_type', 'Не указано')}\n"
@@ -40,7 +52,3 @@ def format_example(ex: dict, index: int | None = None) -> str:
         f"<b>Преимущества:</b>\n— " + "\n— ".join(ex.get("benefits", [])) + "\n\n"
         f"{ex.get('sales_text', '')}"
     )
-    demo_link = (ex.get("demo_link") or "").strip()
-    if demo_link:
-        text += f"\n\nДемо: {demo_link}"
-    return text

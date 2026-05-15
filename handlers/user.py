@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from config import config
 from states import Quiz, Lead
 from keyboards import (
+    admin_menu,
     main_menu,
     persona_keyboard,
     purpose_kb,
@@ -18,12 +19,24 @@ from keyboards import (
     ai_command_kb,
     quick_lead_kb,
 )
-from database import save_application, save_visitor
-from services.formatters import lead_summary, admin_lead_text
+from database import (
+    save_application,
+    save_visitor,
+    export_applications_csv,
+    export_visitors_csv,
+    stats,
+    visitor_stats,
+    get_recent_visitors,
+    get_recent_applications,
+)
+from services.formatters import lead_summary, admin_lead_text, internal_admin_note_text
 from services.ai_service import ai_answer, ask_ai
 from services.google_sheets import send_to_sheets
 from services.voice_service import transcribe_voice
-from services.examples_service import load_examples, format_example
+from services.examples_service import load_examples, format_example, search_examples
+from services.assistant_router import detect_command
+from services.lead_parser import parse_quick_lead, build_quick_lead_preview
+from services.internal_analysis import analyze_internal_complexity
 
 router = Router()
 
@@ -105,8 +118,10 @@ async def send_application(message: Message, state: FSMContext, bot: Bot):
         "price": estimated,
     })
 
+    analysis = analyze_internal_complexity(data)
+    internal_note = internal_admin_note_text(analysis)
     for admin_id in config.admin_ids:
-        await bot.send_message(admin_id, admin_lead_text(app_id, message.from_user, data, estimated))
+        await bot.send_message(admin_id, admin_lead_text(app_id, message.from_user, data, estimated, internal_note))
 
     await message.answer(
         "Заявка отправлена ✅\n\n"
@@ -153,21 +168,27 @@ async def quiz_start(message: Message, state: FSMContext):
 
 
 @router.message(Quiz.purpose)
-async def quiz_purpose(message: Message, state: FSMContext):
+async def quiz_purpose(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(purpose=message.text)
     await message.answer("Какие функции нужны?\n\nМожно выбрать кнопку или написать своими словами.", reply_markup=functions_kb())
     await state.set_state(Quiz.functions)
 
 
 @router.message(Quiz.functions)
-async def quiz_functions(message: Message, state: FSMContext):
+async def quiz_functions(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(functions=message.text)
     await message.answer("Под какой бизнес нужен бот?", reply_markup=business_kb())
     await state.set_state(Quiz.business)
 
 
 @router.message(Quiz.business)
-async def quiz_business(message: Message, state: FSMContext):
+async def quiz_business(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(business=message.text)
     data = await state.get_data()
     await state.clear()
@@ -227,8 +248,10 @@ async def ai_command_start(message: Message, state: FSMContext):
     )
 
 
+@router.message(F.text == "✏️ Дополнить голосом")
 @router.message(F.text == "🎙 Добавить детали голосом")
-async def ai_command_add_details(message: Message):
+async def ai_command_add_details(message: Message, state: FSMContext):
+    await state.update_data(ai_command_mode=True)
     await message.answer("Отправьте дополнительные детали голосом или текстом — я обновлю разбор задачи.")
 
 
@@ -289,63 +312,81 @@ async def lead_start(message: Message, state: FSMContext):
 
 
 @router.message(Lead.name)
-async def lead_name(message: Message, state: FSMContext):
+async def lead_name(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(name=message.text)
     await message.answer("Введите номер телефона или Telegram для связи:")
     await state.set_state(Lead.phone)
 
 
 @router.message(Lead.phone)
-async def lead_phone(message: Message, state: FSMContext):
+async def lead_phone(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(phone=message.text)
     await message.answer("Для какого бизнеса нужен бот?", reply_markup=business_kb())
     await state.set_state(Lead.business)
 
 
 @router.message(Lead.business)
-async def lead_business(message: Message, state: FSMContext):
+async def lead_business(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(business=message.text)
     await message.answer("Какой бот нужен?", reply_markup=purpose_kb())
     await state.set_state(Lead.bot_type)
 
 
 @router.message(Lead.bot_type)
-async def lead_bot_type(message: Message, state: FSMContext):
+async def lead_bot_type(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(bot_type=message.text)
     await message.answer("Какие функции, пожелания и комментарии по боту?", reply_markup=functions_kb())
     await state.set_state(Lead.functions)
 
 
 @router.message(Lead.functions)
-async def lead_functions(message: Message, state: FSMContext):
+async def lead_functions(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(functions=message.text)
     await message.answer("Нужна ли оплата в боте?", reply_markup=yes_no_kb())
     await state.set_state(Lead.payments)
 
 
 @router.message(Lead.payments)
-async def lead_payments(message: Message, state: FSMContext):
+async def lead_payments(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(payments=message.text)
     await message.answer("Нужен AI-консультант?", reply_markup=yes_no_kb())
     await state.set_state(Lead.ai_needed)
 
 
 @router.message(Lead.ai_needed)
-async def lead_ai(message: Message, state: FSMContext):
+async def lead_ai(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(ai_needed=message.text)
     await message.answer("По срокам как удобнее?", reply_markup=urgency_kb())
     await state.set_state(Lead.urgency)
 
 
 @router.message(Lead.urgency)
-async def lead_urgency(message: Message, state: FSMContext):
+async def lead_urgency(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(urgency=message.text)
     await message.answer("Добавьте пожелания или комментарии. Если нечего добавить — напишите «нет».")
     await state.set_state(Lead.comment)
 
 
 @router.message(Lead.comment)
-async def lead_comment(message: Message, state: FSMContext):
+async def lead_comment(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
     await state.update_data(comment=message.text)
     data = await state.get_data()
     estimated = "Начнём с 1000 грн. Финальная стоимость зависит от задач и будет согласована с разработчиком."
@@ -374,6 +415,152 @@ async def lead_restart(message: Message, state: FSMContext):
 async def lead_cancel(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Заявка отменена. Можете вернуться в меню.", reply_markup=main_menu())
+
+
+@router.message(Lead.confirm)
+async def lead_confirm_any_text(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
+    await message.answer(
+        "Скажите «отправить заявку», «заполнить заново», «отмена» или «меню».",
+        reply_markup=confirm_kb(),
+    )
+
+
+async def execute_assistant_command(message: Message, state: FSMContext, bot: Bot, text: str) -> bool:
+    is_admin = message.from_user.id in config.admin_ids
+    cmd = detect_command(text, is_admin=is_admin)
+    intent = cmd.get("intent")
+
+    if intent in {"open_menu", "cancel"}:
+        await state.clear()
+        await message.answer("Главное меню 👇", reply_markup=main_menu())
+        return True
+    if intent == "admin_forbidden":
+        await message.answer("Этот раздел доступен только администратору.", reply_markup=main_menu())
+        return True
+    if intent == "contact_developer":
+        await contact_dev(message)
+        return True
+    if intent == "restart_lead":
+        await lead_start(message, state)
+        return True
+    if intent == "confirm_send":
+        await lead_send(message, state, bot)
+        return True
+    if intent == "open_examples":
+        await examples(message)
+        return True
+    if intent == "find_example":
+        found = search_examples(cmd.get("query") or text, limit=3)
+        if not found:
+            await message.answer("Точного примера не нашёл. Покажу доступные варианты.")
+            await examples(message)
+        else:
+            last_title = None
+            for i, ex in enumerate(found, 1):
+                await message.answer(format_example(ex, i), parse_mode="HTML")
+                last_title = ex.get("title")
+            if last_title:
+                await state.update_data(last_example_title=last_title)
+            await message.answer(
+                "Хотите похожий бот? Можете сказать «хочу такой бот» или нажать кнопку.",
+                reply_markup=quick_lead_kb(),
+            )
+        return True
+    if intent == "start_lead":
+        await lead_start(message, state)
+        return True
+    if intent == "start_ai_consultant":
+        await choose_ai_persona(message, state)
+        return True
+    if intent in {"pick_business_solution", "add_details"}:
+        await state.update_data(ai_command_mode=True)
+        await message.answer("Пришлите дополнительные детали голосом или текстом — я добавлю их к текущему описанию.", reply_markup=ai_command_kb())
+        return True
+    if intent == "open_admin" and is_admin:
+        await message.answer("Админ-панель открыта.", reply_markup=admin_menu())
+        return True
+    if intent == "export_applications" and is_admin:
+        file_path = await export_applications_csv()
+        await message.answer_document(FSInputFile(file_path), caption="📥 Выгрузка заявок")
+        return True
+    if intent == "export_visitors" and is_admin:
+        file_path = await export_visitors_csv()
+        await message.answer_document(FSInputFile(file_path), caption="📥 Выгрузка посетителей бота")
+        return True
+    if intent == "show_applications" and is_admin:
+        rows = await get_recent_applications(10)
+        if not rows:
+            await message.answer("Заявок пока нет.", reply_markup=admin_menu())
+            return True
+        lines = ["🆕 Последние заявки:"]
+        for app_id, name, phone, business, bot_type, status, created_at in rows[:10]:
+            lines.append(
+                f"\n№{app_id}\n"
+                f"Дата: {created_at}\n"
+                f"Имя: {name}\n"
+                f"Телефон: {phone}\n"
+                f"Бизнес: {business}\n"
+                f"Тип: {bot_type}\n"
+                f"Статус: {status}\n\n---"
+            )
+        await message.answer("\n".join(lines), reply_markup=admin_menu())
+        return True
+    if intent == "show_stats" and is_admin:
+        s = await stats()
+        await message.answer(
+            "📊 Статистика:\n\n"
+            f"👥 Посетителей: {s.get('visitors', 0)}\n"
+            f"Клиентов: {s['clients']}\n"
+            f"Заявок: {s['apps']}\n"
+            f"Срочных заявок: {s['urgent']}\n"
+            f"Заявок с AI: {s['ai']}",
+            reply_markup=admin_menu(),
+        )
+        return True
+    if intent == "show_visitors" and is_admin:
+        s = await visitor_stats()
+        rows = await get_recent_visitors(10)
+        text_out = (
+            "👥 Посетители бота:\n\n"
+            f"Всего посетителей: {s['total']}\n"
+            f"Новых сегодня: {s['today']}\n"
+            f"Всего запусков /start: {s['visits_total']}\n\n"
+            "Последние 10 посетителей:\n\n"
+        )
+        if not rows:
+            text_out += "Пока нет посетителей."
+        else:
+            for user_id, username, first_name, last_name, source, first_seen, last_seen, visits_count in rows:
+                username_text = f"@{username}" if username else "без username"
+                name_text = f"{first_name} {last_name}".strip() or "без имени"
+                text_out += (
+                    f"ID: {user_id}\nИмя: {name_text}\nUsername: {username_text}\n"
+                    f"Визитов: {visits_count}\nПервый вход: {first_seen}\nПоследний вход: {last_seen}\n\n"
+                )
+        await message.answer(text_out, reply_markup=admin_menu())
+        return True
+    if intent == "create_quick_lead":
+        data = await state.get_data()
+        if "хочу такой бот" in (text or "").lower() and data.get("last_example_title"):
+            quick = parse_quick_lead(text, message.from_user.username)
+            quick["bot_type"] = data.get("last_example_title")
+        else:
+            quick = parse_quick_lead(text, message.from_user.username)
+        old = (data.get("ai_command_text") or "").strip()
+        merged = f"{old}\n{text}".strip() if old else (text or "")
+        await state.update_data(ai_command_mode=True, ai_command_text=merged, **quick)
+        await message.answer(
+            build_quick_lead_preview(quick) + "\n\nМожете сказать голосом:\n— отправить заявку\n— дополнить\n— заполнить вручную\n— меню",
+            reply_markup=ai_command_kb(),
+        )
+        return True
+    if intent == "general_assistant":
+        answer = await ai_answer(text + AI_SALES_RULES)
+        await message.answer(f"{answer}\n\nЕсли хотите, могу сразу оформить заявку.", reply_markup=ai_command_kb())
+        return True
+    return False
 
 
 async def process_fsm_voice_text(message: Message, state: FSMContext, text: str, bot: Bot) -> bool:
@@ -473,6 +660,8 @@ async def voice_handler(message: Message, state: FSMContext, bot: Bot):
         return await message.answer(err)
 
     await message.answer(f"Распознал: {text}")
+    if await execute_assistant_command(message, state, bot, text):
+        return
     if await process_fsm_voice_text(message, state, text, bot):
         return
 
@@ -512,6 +701,23 @@ async def process_free_text(message: Message, state: FSMContext, text: str):
         await message.answer("Выберите действие в меню 👇", reply_markup=main_menu())
 
 
+async def try_global_text_command(message: Message, state: FSMContext, bot: Bot) -> bool:
+    text = message.text or ""
+    cmd = detect_command(text, is_admin=message.from_user.id in config.admin_ids)
+    if cmd["intent"] in {
+        "open_menu", "cancel", "confirm_send", "restart_lead",
+        "contact_developer", "admin_forbidden",
+        "open_admin", "export_applications", "export_visitors",
+        "show_stats", "show_visitors", "show_applications"
+    }:
+        return await execute_assistant_command(message, state, bot, text)
+    return False
+
+
 @router.message(F.text)
-async def free_ai_chat_or_fallback(message: Message, state: FSMContext):
+async def free_ai_chat_or_fallback(message: Message, state: FSMContext, bot: Bot):
+    if await try_global_text_command(message, state, bot):
+        return
+    if await execute_assistant_command(message, state, bot, message.text or ""):
+        return
     await process_free_text(message, state, message.text or "")
