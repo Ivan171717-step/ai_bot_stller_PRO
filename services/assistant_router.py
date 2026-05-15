@@ -46,7 +46,7 @@ def detect_command(text: str, is_admin: bool = False) -> dict:
         return out("open_menu")
     if any(x in t for x in ["отмена", "отменить"]):
         return out("cancel")
-    if any(x in t for x in ["отправить заявку", "подтверждаю", "да отправить", "покажи заявки"]):
+    if any(x in t for x in ["отправить заявку", "подтверждаю", "да отправить", "отправляй"]):
         return out("confirm_send")
     if any(x in t for x in ["заполнить заново", "начать заново"]):
         return out("restart_lead")
@@ -55,7 +55,7 @@ def detect_command(text: str, is_admin: bool = False) -> dict:
 
     if any(x in t for x in ["открой примеры", "покажи примеры", "какие боты можно сделать", "примеры ботов"]):
         return out("open_examples")
-    if any(x in t for x in ["покажи пример", "пример для", "бот для", "покажи webapp", "сложные боты", "ботов с ai"]):
+    if any(x in t for x in ["покажи пример", "есть пример", "пример для", "покажи webapp", "сложные боты", "ботов с ai"]):
         return out("find_example", 0.85)
     if any(x in t for x in ["оформить заявку", "хочу оставить заявку", "создать заявку"]):
         return out("start_lead")
@@ -70,6 +70,8 @@ def detect_command(text: str, is_admin: bool = False) -> dict:
         return out("open_admin")
     if is_admin and any(x in t for x in ["выгрузи заявки", "экспорт заявок"]):
         return out("export_applications")
+    if is_admin and any(x in t for x in ["покажи заявки"]):
+        return out("show_applications")
     if is_admin and any(x in t for x in ["выгрузи клиентов", "экспорт посетителей"]):
         return out("export_visitors")
     if is_admin and any(x in t for x in ["статистика", "покажи статистику"]):

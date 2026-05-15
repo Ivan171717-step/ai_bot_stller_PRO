@@ -4,7 +4,29 @@ import re
 def parse_quick_lead(text: str, username: str | None = None) -> dict:
     t = (text or "").lower()
     business = "Не указано"
-    if "магазин" in t:
+    if "сто" in t or "автосервис" in t:
+        business = "автосервис / СТО"
+    elif "недвиж" in t:
+        business = "недвижимость"
+    elif "курс" in t or "обучен" in t:
+        business = "курсы / обучение"
+    elif "часы" in t:
+        business = "магазин часов"
+    elif "olx" in t:
+        business = "OLX"
+    elif "маркетплейс" in t:
+        business = "маркетплейс"
+    elif "webapp" in t:
+        business = "WebApp"
+    elif "crm" in t:
+        business = "CRM"
+    elif "faq" in t or "поддержк" in t:
+        business = "поддержка / FAQ"
+    elif "кафе" in t or "ресторан" in t or "суш" in t or "доставка еды" in t:
+        business = "кафе / ресторан / доставка еды"
+    elif "металлолом" in t:
+        business = "металлолом"
+    elif "магазин" in t:
         business = "магазин одежды" if "одежд" in t else "магазин"
     elif "салон" in t:
         business = "салон красоты"
@@ -20,7 +42,25 @@ def parse_quick_lead(text: str, username: str | None = None) -> dict:
     else:
         bot_type = "Не указано"
 
-    funcs = [k for k in ["каталог", "заявки", "меню", "оформление заказов", "запись клиентов", "оплата"] if k in t]
+    func_map = {
+        "парсинг": ["парсинг", "парсер", "парс"],
+        "мониторинг цен": ["мониторинг цен", "цены", "price monitoring"],
+        "WebApp": ["webapp"],
+        "CRM": ["crm"],
+        "Google Sheets": ["google sheets", "гугл таблиц", "таблиц"],
+        "уведомления": ["уведомлен"],
+        "рассылка": ["рассыл"],
+        "корзина": ["корзин"],
+        "запись": ["запис"],
+        "геолокация": ["геолокац"],
+        "фото": ["фото", "изображ"],
+        "AI-память": ["ai-памят", "ai память", "память"],
+        "каталог": ["каталог"],
+        "заявки": ["заявк"],
+        "меню": ["меню"],
+        "оформление заказов": ["оформление заказов", "заказ"],
+    }
+    funcs = [name for name, keys in func_map.items() if any(k in t for k in keys)]
     functions = ", ".join(funcs) if funcs else (text or "")
     payments = "Да" if "оплат" in t else "Нет"
     ai_needed = "Да" if (" ai" in f" {t}" or "ии" in t or "консультант" in t) else "Нет"

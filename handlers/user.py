@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from config import config
 from states import Quiz, Lead
 from keyboards import (
+    admin_menu,
     main_menu,
     persona_keyboard,
     purpose_kb,
@@ -18,12 +19,24 @@ from keyboards import (
     ai_command_kb,
     quick_lead_kb,
 )
-from database import save_application, save_visitor
+from database import (
+    save_application,
+    save_visitor,
+    export_applications_csv,
+    export_visitors_csv,
+    stats,
+    visitor_stats,
+    get_recent_visitors,
+    get_recent_applications,
+)
 from services.formatters import lead_summary, admin_lead_text, internal_admin_note_text
 from services.ai_service import ai_answer, ask_ai
 from services.google_sheets import send_to_sheets
 from services.voice_service import transcribe_voice
 from services.examples_service import load_examples, format_example, search_examples
+from services.assistant_router import detect_command
+from services.lead_parser import parse_quick_lead, build_quick_lead_preview
+from services.internal_analysis import analyze_internal_complexity
 
 router = Router()
 
@@ -229,6 +242,7 @@ async def ai_command_start(message: Message, state: FSMContext):
     )
 
 
+@router.message(F.text == "✏️ Дополнить голосом")
 @router.message(F.text == "🎙 Добавить детали голосом")
 async def ai_command_add_details(message: Message):
     await message.answer("Отправьте дополнительные детали голосом или текстом — я обновлю разбор задачи.")
@@ -422,16 +436,56 @@ async def execute_assistant_command(message: Message, state: FSMContext, bot: Bo
         await message.answer("Админ-панель открыта.", reply_markup=admin_menu())
         return True
     if intent == "export_applications" and is_admin:
-        await admin_handlers.export_applications(message)
+        file_path = await export_applications_csv()
+        await message.answer_document(FSInputFile(file_path), caption="📥 Выгрузка заявок")
         return True
     if intent == "export_visitors" and is_admin:
-        await admin_handlers.export_clients(message)
+        file_path = await export_visitors_csv()
+        await message.answer_document(FSInputFile(file_path), caption="📥 Выгрузка посетителей бота")
+        return True
+    if intent == "show_applications" and is_admin:
+        rows = await get_recent_applications(10)
+        if not rows:
+            await message.answer("Заявок пока нет.", reply_markup=admin_menu())
+            return True
+        lines = ["🆕 Последние заявки:"]
+        for app_id, name, phone, business, bot_type, status, created_at in rows[:10]:
+            lines.append(f"№{app_id} | {created_at} | {name} | {business} | {bot_type} | {status}")
+        await message.answer("\n".join(lines), reply_markup=admin_menu())
         return True
     if intent == "show_stats" and is_admin:
-        await admin_handlers.show_stats(message)
+        s = await stats()
+        await message.answer(
+            "📊 Статистика:\n\n"
+            f"👥 Посетителей: {s.get('visitors', 0)}\n"
+            f"Клиентов: {s['clients']}\n"
+            f"Заявок: {s['apps']}\n"
+            f"Срочных заявок: {s['urgent']}\n"
+            f"Заявок с AI: {s['ai']}",
+            reply_markup=admin_menu(),
+        )
         return True
     if intent == "show_visitors" and is_admin:
-        await admin_handlers.show_visitors(message)
+        s = await visitor_stats()
+        rows = await get_recent_visitors(10)
+        text_out = (
+            "👥 Посетители бота:\n\n"
+            f"Всего посетителей: {s['total']}\n"
+            f"Новых сегодня: {s['today']}\n"
+            f"Всего запусков /start: {s['visits_total']}\n\n"
+            "Последние 10 посетителей:\n\n"
+        )
+        if not rows:
+            text_out += "Пока нет посетителей."
+        else:
+            for user_id, username, first_name, last_name, source, first_seen, last_seen, visits_count in rows:
+                username_text = f"@{username}" if username else "без username"
+                name_text = f"{first_name} {last_name}".strip() or "без имени"
+                text_out += (
+                    f"ID: {user_id}\nИмя: {name_text}\nUsername: {username_text}\n"
+                    f"Визитов: {visits_count}\nПервый вход: {first_seen}\nПоследний вход: {last_seen}\n\n"
+                )
+        await message.answer(text_out, reply_markup=admin_menu())
         return True
     if intent == "create_quick_lead":
         quick = parse_quick_lead(text, message.from_user.username)
@@ -588,9 +642,3 @@ async def free_ai_chat_or_fallback(message: Message, state: FSMContext, bot: Bot
     if await execute_assistant_command(message, state, bot, message.text or ""):
         return
     await process_free_text(message, state, message.text or "")
-
-from keyboards import admin_menu
-from handlers import admin as admin_handlers
-from services.assistant_router import detect_command
-from services.lead_parser import parse_quick_lead, build_quick_lead_preview
-from services.internal_analysis import analyze_internal_complexity
