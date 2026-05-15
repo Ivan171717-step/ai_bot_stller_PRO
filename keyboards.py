@@ -5,8 +5,9 @@ def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🤖 Какой вам нужен бот")],
-            [KeyboardButton(text="🧠 AI-консультант")],
+            [KeyboardButton(text="🧠 AI-консультант"), KeyboardButton(text="🎙 AI-команда")],
             [KeyboardButton(text="🏢 Под какой бизнес")],
+            [KeyboardButton(text="🎯 Подобрать решение под мой бизнес")],
             [KeyboardButton(text="🎨 Примеры ботов")],
             [KeyboardButton(text="📝 Оформить заявку")],
             [KeyboardButton(text="📞 Связаться с разработчиком")],
@@ -46,6 +47,7 @@ def admin_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🆕 Новые заявки"), KeyboardButton(text="📊 Статистика")],
             [KeyboardButton(text="👥 Посетители"), KeyboardButton(text="📥 Выгрузка клиентов")],
+            [KeyboardButton(text="📥 Выгрузка заявок")],
             [KeyboardButton(text="💰 Настроить цены"), KeyboardButton(text="📦 Пакеты")],
             [KeyboardButton(text="🎨 Примеры"), KeyboardButton(text="⚙️ Настройки")],
             [KeyboardButton(text="⬅️ В меню")],
@@ -72,8 +74,8 @@ def functions_kb() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="Кнопки и меню"), KeyboardButton(text="Прием заявок")],
             [KeyboardButton(text="CRM / таблица"), KeyboardButton(text="Уведомления админу")],
             [KeyboardButton(text="Оплата"), KeyboardButton(text="AI-ответы")],
-            [KeyboardButton(text="Каталог"), KeyboardButton(text="Расчет стоимости")],
-            [KeyboardButton(text="Фото"), KeyboardButton(text="Геолокация")],
+            [KeyboardButton(text="Каталог"), KeyboardButton(text="Фото")],
+            [KeyboardButton(text="Геолокация")],
             [KeyboardButton(text="Готово")],
         ],
         resize_keyboard=True
@@ -153,4 +155,29 @@ def admin_application_kb(app_id: int) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Выполнена", callback_data=f"status:{app_id}:выполнена")],
             [InlineKeyboardButton(text="Отменена", callback_data=f"status:{app_id}:отменена")],
         ]
+    )
+
+
+def ai_command_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ Отправить заявку")],
+            [KeyboardButton(text="🎙 Добавить детали голосом")],
+            [KeyboardButton(text="📝 Заполнить вручную")],
+            [KeyboardButton(text="📞 Связаться с разработчиком")],
+            [KeyboardButton(text="⬅️ В меню")],
+        ],
+        resize_keyboard=True
+    )
+
+
+def quick_lead_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ Отправить заявку")],
+            [KeyboardButton(text="📝 Заполнить вручную")],
+            [KeyboardButton(text="📞 Связаться с разработчиком")],
+            [KeyboardButton(text="⬅️ В меню")],
+        ],
+        resize_keyboard=True
     )

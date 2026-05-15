@@ -19,6 +19,7 @@ from database import (
     get_recent_visitors,
     visitor_stats,
     export_visitors_csv,
+    export_applications_csv,
 )
 
 router = Router()
@@ -151,9 +152,9 @@ async def price_settings(message: Message, state: FSMContext):
 
     await message.answer(
         "Текущие настройки:\n\n"
-        f"СТАРТ от: {s.get('min_price')} грн\n"
+        f"Начнём с {s.get('min_price')} грн\n"
         f"Предел расчета: {s.get('max_price')} грн\n"
-        f"Срочность: +{s.get('urgent_price')} грн\n"
+        f"Срочность: {s.get('urgent_price')} грн\n"
         f"Срок: {s.get('deadline')}\n\n"
         "Введите новую стартовую цену, например 1000:"
     )
@@ -289,3 +290,10 @@ async def example_desc(message: Message, state: FSMContext):
     await add_example(data["example_title"], message.text.strip())
     await state.clear()
     await message.answer("Пример добавлен ✅", reply_markup=admin_menu())
+
+@router.message(F.text == "📥 Выгрузка заявок")
+async def export_applications(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    file_path = await export_applications_csv()
+    await message.answer_document(FSInputFile(file_path), caption="📥 Выгрузка заявок")
